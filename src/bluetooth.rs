@@ -68,7 +68,7 @@ impl BluetoothConnection {
     
     pub async fn read(&self) -> Result<(), Box<dyn Error>> {
         if !self.peripheral.is_connected().await.unwrap() {
-            return Err("Peripheral is not connected".into())
+            self.peripheral.connect().await?;
         }
 
         self.peripheral.discover_services().await?;
@@ -94,7 +94,7 @@ impl BluetoothConnection {
 
     pub async fn write(&self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
         if !self.peripheral.is_connected().await.unwrap() {
-            return Err("Peripheral is not connected".into())
+            self.peripheral.connect().await?;
         }
 
         self.peripheral.discover_services().await?;
@@ -109,13 +109,14 @@ impl BluetoothConnection {
         Ok(())
     }
 
-    pub async fn disconnect(&self) {
+    pub async fn disconnect(&self) -> Result<(), Box<dyn Error>> {
         if self.peripheral.is_connected().await.expect("Could not get connection status") {
             info!("Disconnecting from peripheral {:?}...", &self.get_props().await.address);
             self.peripheral
                 .disconnect()
-                .await
-                .expect("Error disconnecting from BLE peripheral");
+                .await?;
         }
+
+        Ok(())
     }
 }

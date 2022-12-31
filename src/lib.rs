@@ -82,6 +82,6 @@ mod test {
         let hmsoft = result.get_by_name("HMSoft").await.expect("Could not find HMSoft device");
         let connection = connect_bluetooth(&hmsoft).await;
         connection.write("off".as_bytes()).await.unwrap();
-        connection.disconnect().await;
+        connection.disconnect().await.unwrap();
     }
 }
