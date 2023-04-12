@@ -1,5 +1,5 @@
 use std::{error::Error, str::FromStr};
-use btleplug::{platform::{Adapter, Manager, Peripheral}, api::{Manager as _, Central as _, CharPropFlags, WriteType, Peripheral as _, BDAddr, PeripheralProperties}};
+use btleplug::{platform::{Adapter, Manager, Peripheral}, api::{Manager as _, Central as _, CharPropFlags, WriteType, Peripheral as _, BDAddr, PeripheralProperties, ValueNotification}};
 use futures::StreamExt;
 use log::info;
 
@@ -17,19 +17,6 @@ pub async fn get_adapter() -> Adapter {
         .expect("No adapters are available now...")
 }
 
-pub async fn peripheral_by_addr(addr: &BDAddr) -> Result<Peripheral, Box<dyn Error>> {
-    let peripheral = CENTRAL.get()
-        .await
-        .peripherals()
-        .await?
-        .iter()
-        .find(|p| p.address().eq(addr))
-        .expect("Error")
-        .to_owned();
-
-    Ok(peripheral)
-}
-
 pub async fn connect_peripheral(peripheral: &Peripheral) -> Result<BluetoothConnection, Box<dyn Error>>  {
     let properties = peripheral.properties().await?;
     let is_connected = peripheral.is_connected().await?;
@@ -43,78 +30,102 @@ pub async fn connect_peripheral(peripheral: &Peripheral) -> Result<BluetoothConn
         peripheral.connect().await?;
     }
 
-    let is_connected = peripheral.is_connected().await?;
-    let message = if is_connected { "succeeded" } else { "failed" };
+    if !peripheral.is_connected().await? {
+        return Err("Could not connect to peripheral".into());
+    }
 
-    info!("Connection to peripherial: {} has {}", &local_name, message);
-    Ok(BluetoothConnection { peripheral: peripheral.clone() })
+    peripheral.discover_services().await?;
+
+    for service in peripheral.services() {
+        for characteristic in service.characteristics {
+            if characteristic.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE) {
+                return Ok(BluetoothConnection { peripheral: peripheral.clone(), target_characteristic: characteristic });
+            }
+        }
+    }
+
+    return Err("Could not find a valid characteristic for read/write".into())
 }
 
-pub async fn connect_peripheral_by_address(address: &str) -> Result<BluetoothConnection, Box<dyn Error>> {
-    let peripheral = peripheral_by_addr(&BDAddr::from_str(address).unwrap()).await?;
+pub async fn peripheral_by_addr(addr: &str) -> Result<Peripheral, Box<dyn Error>> {
+    let peripheral = CENTRAL.get()
+        .await
+        .peripherals()
+        .await?
+        .iter()
+        .find(|p| p.address().eq(&BDAddr::from_str(addr).unwrap()))
+        .expect("Error")
+        .to_owned();
 
-    connect_peripheral(&peripheral).await
+    Ok(peripheral)
 }
 
 #[derive(Clone)]
 pub struct BluetoothConnection {
     pub(crate) peripheral: Peripheral,
+    pub(crate) target_characteristic: btleplug::api::Characteristic,
 }
 
 impl BluetoothConnection {
+    pub async fn valid(&self) -> bool {
+        self.peripheral.is_connected().await.unwrap()
+    }
+
     pub async fn get_props(&self) -> PeripheralProperties {
         self.peripheral.properties().await.unwrap().unwrap()
     }
+
+    pub async fn unsubscribe(&self) -> Result<(), Box<dyn Error>> {
+        if !self.valid().await {
+            return Err("Peripheral not connected".into())
+        }
+
+        self.peripheral.unsubscribe(&self.target_characteristic).await?;
+
+        Ok(())
+    }
     
-    pub async fn read(&self) -> Result<(), Box<dyn Error>> {
-        if !self.peripheral.is_connected().await.unwrap() {
-            self.peripheral.connect().await?;
+    pub async fn subscribe(&self, handle: fn(ValueNotification) -> ()) -> Result<(), Box<dyn Error>> {
+        if !self.valid().await {
+            return Err("Peripheral not connected".into())
         }
 
-        self.peripheral.discover_services().await?;
+        self.peripheral.subscribe(&self.target_characteristic).await?;
 
-        for service in self.peripheral.services() {
-            for characteristic in service.characteristics {
-                if characteristic.properties.contains(CharPropFlags::NOTIFY) {
-                    info!("Subscribing to characteristic {:?}", characteristic.uuid);
-                    self.peripheral.subscribe(&characteristic).await?;
-                    let mut notification_stream = 
-                        self.peripheral.notifications().await?.take(4);
-                    while let Some(data) = notification_stream.next().await {
-                        info!(
-                            "Received data from <somewhere> [{:?}]: {:?}",
-                            data.uuid, data.value
-                        );
-                    }
-                }
+        let mut stream = self.peripheral.notifications().await?;
+
+        tokio::spawn(async move {
+            while let Some(data) = stream.next().await {
+                handle(data);
             }
-        }
+        });
+
         Ok(())
     }
 
     pub async fn write(&self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
-        if !self.peripheral.is_connected().await.unwrap() {
-            self.peripheral.connect().await?;
+        if !self.valid().await {
+            return Err("Peripheral not connected".into())
         }
 
-        self.peripheral.discover_services().await?;
-    
-        for service in self.peripheral.services() {
-            for characteristic in service.characteristics {
-                if characteristic.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE) {
-                    self.peripheral.write(&characteristic, bytes, WriteType::WithoutResponse).await?;
-                }
-            }
-        }
+        self.peripheral.write(&self.target_characteristic, bytes, WriteType::WithoutResponse).await?;
+
         Ok(())
     }
 
+    pub async fn read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+        if !self.valid().await {
+            return Err("Peripheral not connected".into())
+        }
+
+        let result = self.peripheral.read(&self.target_characteristic).await?;
+
+        Ok(result)
+    }
+
     pub async fn disconnect(&self) -> Result<(), Box<dyn Error>> {
-        if self.peripheral.is_connected().await.expect("Could not get connection status") {
-            info!("Disconnecting from peripheral {:?}...", &self.get_props().await.address);
-            self.peripheral
-                .disconnect()
-                .await?;
+        if self.valid().await {
+            self.peripheral.disconnect().await?;
         }
 
         Ok(())

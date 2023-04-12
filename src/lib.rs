@@ -8,7 +8,7 @@ use btleplug::api::{Central, ScanFilter, Peripheral as _};
 use btleplug::platform::{Adapter, Peripheral};
 use simplelog::{TermLogger, Config};
 use lazy_static::lazy_static;
-use bluetooth::{get_adapter, connect_peripheral, BluetoothConnection, connect_peripheral_by_address};
+use bluetooth::{get_adapter, connect_peripheral, BluetoothConnection, peripheral_by_addr};
 
 lazy_static! {
     pub static ref CENTRAL: AsyncOnce<Adapter> = AsyncOnce::new(async {
@@ -65,23 +65,21 @@ pub async fn scan_bluetooth(time: u8) -> ScanResult {
 }
 
 pub async fn connect_by_address(address: String) -> BluetoothConnection {
-    connect_peripheral_by_address(&address).await.expect("Error")
-}
-
-pub async fn connect_bluetooth(peripheral: &Peripheral) -> BluetoothConnection {
-    connect_peripheral(peripheral).await.expect("Error")
+    let peripheral = peripheral_by_addr(&address).await.expect("Failed to find peripheral");
+    connect_peripheral(&peripheral).await.expect("Error")
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{scan_bluetooth, connect_bluetooth};
+    use crate::{scan_bluetooth, bluetooth::connect_peripheral};
 
     #[tokio::test]
     async fn test_ble() {
-        let result = scan_bluetooth(3).await;
+        let result = scan_bluetooth(5).await;
         let hmsoft = result.get_by_name("HMSoft").await.expect("Could not find HMSoft device");
-        let connection = connect_bluetooth(&hmsoft).await;
-        connection.write("off".as_bytes()).await.unwrap();
+        let connection = connect_peripheral(&hmsoft).await.unwrap();
+
+        connection.write("on".as_bytes()).await.unwrap();
         connection.disconnect().await.unwrap();
     }
 }
