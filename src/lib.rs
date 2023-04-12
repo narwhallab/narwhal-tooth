@@ -46,21 +46,22 @@ impl DerefMut for ScanResult {
     fn deref_mut(&mut self) -> &mut Vec<Peripheral> { &mut self.result }
 }
 
+/// Scan for BLE devices
 pub async fn scan_bluetooth(time: u8) -> ScanResult {
     CENTRAL.get().await
         .start_scan(ScanFilter::default())
         .await
-        .expect("Can't scan BLE adapter for connected devices...");
+        .expect("Couldn't scan for BLE devices...");
 
     thread::sleep(Duration::from_secs(time as u64)); // Wait until the scan is done
 
-    let peripherals = CENTRAL.get().await
+    let result = CENTRAL.get().await
         .peripherals()
         .await
-        .expect("Can't get peripherals from BLE adapter...");
+        .expect("Couldn't retrieve peripherals from BLE adapter...");
 
     ScanResult {
-        result: peripherals
+        result
     }
 }
 
