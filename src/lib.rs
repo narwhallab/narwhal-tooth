@@ -82,5 +82,6 @@ mod test {
 
         connection.write("on".as_bytes()).await.unwrap();
         connection.disconnect().await.unwrap();
+        println!("{}", connection.peripheral_connected().await)
     }
 }

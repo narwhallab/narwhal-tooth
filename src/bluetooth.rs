@@ -67,7 +67,7 @@ pub struct BluetoothConnection {
 }
 
 impl BluetoothConnection {
-    pub async fn valid(&self) -> bool {
+    pub async fn peripheral_connected(&self) -> bool {
         self.peripheral.is_connected().await.unwrap()
     }
 
@@ -76,7 +76,7 @@ impl BluetoothConnection {
     }
 
     pub async fn unsubscribe(&self) -> Result<(), Box<dyn Error>> {
-        if !self.valid().await {
+        if !self.peripheral_connected().await {
             return Err("Peripheral not connected".into())
         }
 
@@ -86,7 +86,7 @@ impl BluetoothConnection {
     }
     
     pub async fn subscribe(&self, handle: fn(ValueNotification) -> ()) -> Result<(), Box<dyn Error>> {
-        if !self.valid().await {
+        if !self.peripheral_connected().await {
             return Err("Peripheral not connected".into())
         }
 
@@ -104,7 +104,7 @@ impl BluetoothConnection {
     }
 
     pub async fn write(&self, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
-        if !self.valid().await {
+        if !self.peripheral_connected().await {
             return Err("Peripheral not connected".into())
         }
 
@@ -114,7 +114,7 @@ impl BluetoothConnection {
     }
 
     pub async fn read(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        if !self.valid().await {
+        if !self.peripheral_connected().await {
             return Err("Peripheral not connected".into())
         }
 
@@ -124,7 +124,8 @@ impl BluetoothConnection {
     }
 
     pub async fn disconnect(&self) -> Result<(), Box<dyn Error>> {
-        if self.valid().await {
+        if self.peripheral_connected().await {
+            println!("Disconnected");
             self.peripheral.disconnect().await?;
         }
 
