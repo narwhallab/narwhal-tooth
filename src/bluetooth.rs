@@ -33,10 +33,10 @@ impl BluetoothConnection {
     }
 
     pub async fn send(&self, payload: &[u8]) -> Result<String, Box<dyn Error>> {
-        self.send_timeout(payload, Duration::from_secs(5)).await
+        self.send_with_timeout(payload, Duration::from_secs(5)).await
     }
 
-    pub async fn send_timeout(&self, payload: &[u8], duration_timeout: Duration) -> Result<String, Box<dyn Error>> {
+    pub async fn send_with_timeout(&self, payload: &[u8], duration_timeout: Duration) -> Result<String, Box<dyn Error>> {
         if !self.is_api_available().await {
             return Err("Peripheral not connected".into())
         }
