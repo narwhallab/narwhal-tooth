@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use async_once::AsyncOnce;
 use btleplug::platform::Adapter;
-use simplelog::{TermLogger, Config};
 use lazy_static::lazy_static;
 use util::fetch_adapter;
 use tokio::sync::mpsc::Sender;
@@ -19,20 +18,17 @@ lazy_static! {
     pub static ref EVENT_HANDLER: Mutex<HashMap<String, Sender<String>>> = Mutex::new(HashMap::new());
 }
 
-pub fn init_logger() {
-    TermLogger::init(log::LevelFilter::Info, Config::default(), simplelog::TerminalMode::Stdout, simplelog::ColorChoice::Auto).unwrap();
-}
-
 #[cfg(test)]
 mod test {
-    use crate::{util::connect_peripheral, scan::scan_bluetooth};
+    use std::time::Duration;
+
+    use crate::{util::connect_device, scan::scan_bluetooth};
 
     #[tokio::test]
     async fn test_ble() {
-        let result = scan_bluetooth(5).await;
-        let hmsoft = result.get_by_name("HMSoft").await.expect("Could not find HMSoft device");
-        let connection = connect_peripheral(&hmsoft).await.unwrap();
-        connection.initialize().await;
+        let result = scan_bluetooth(Duration::from_secs(3)).await;
+        let hmsoft = result.search_by_name("HMSoft".to_string()).await.expect("Could not find device");
+        let connection = connect_device(hmsoft).await.unwrap();
 
         println!("{}", connection.check_alive().await);
     }

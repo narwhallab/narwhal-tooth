@@ -1,14 +1,15 @@
 use std::{error::Error, time::Duration};
-use btleplug::{platform::Peripheral, api::{Peripheral as _, PeripheralProperties, Characteristic, WriteType}};
+use btleplug::{platform::Peripheral, api::{Peripheral as _, Characteristic, WriteType}};
 use futures::StreamExt;
 use log::info;
 use tokio::{task::JoinHandle, sync::mpsc::channel, time::timeout};
-use crate::EVENT_HANDLER;
+use crate::{EVENT_HANDLER, scan::BluetoothDevice};
 
 #[derive(Clone)]
 pub struct BluetoothConnection {
     pub(crate) peripheral: Peripheral,
-    pub(crate) target_characteristic: Characteristic
+    pub(crate) target_characteristic: Characteristic,
+    pub(crate) device: BluetoothDevice
 }
 
 impl BluetoothConnection {
@@ -16,7 +17,7 @@ impl BluetoothConnection {
         return self.peripheral.is_connected().await.unwrap();
     }
 
-    pub async fn initialize(&self) {
+    pub(crate) async fn initialize(&self) {
         self.subscribe(|(uuid, data)| {
             futures::executor::block_on(async move {
                 EVENT_HANDLER.lock().unwrap().get(&uuid).unwrap().send(data).await.unwrap();
@@ -101,14 +102,6 @@ impl BluetoothConnection {
         return Ok(())
     }
 
-    async fn get_props(&self) -> PeripheralProperties {
-        return self.peripheral.properties().await.unwrap().unwrap()
-    }
-
-    pub async fn get_local_name(&self) -> String {
-        return self.get_props().await.local_name.unwrap_or("<no name>".to_string())
-    }
-
     pub async fn disconnect(&self) -> Result<(), Box<dyn Error>> {
         if self.is_api_available().await {
             self.peripheral.disconnect().await?;
@@ -117,5 +110,9 @@ impl BluetoothConnection {
         }
 
         return Ok(())
+    }
+
+    pub async fn get_local_name(&self) -> String {
+        return self.device.get_local_name().unwrap_or("<no name>".to_string())
     }
 }

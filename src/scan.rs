@@ -1,30 +1,43 @@
 use std::time::Duration;
-use std::thread;
-use std::ops::{Deref, DerefMut};
-use btleplug::api::{ScanFilter, Peripheral as _, Central as _};
-use btleplug::platform::Peripheral;
+use btleplug::{api::{ScanFilter, Central as _, Peripheral as _}, platform::{Peripheral, Adapter}};
 use crate::CENTRAL;
 
+#[derive(Clone)]
+pub struct BluetoothDevice {
+    addr: String,
+    local_name: Option<String>
+}
+
+impl BluetoothDevice {
+    pub fn get_local_name(&self) -> Option<String> {
+        self.local_name.clone()
+    }
+
+    pub fn get_addr(&self) -> String {
+        self.addr.clone()
+    }
+}
+
 pub struct ScanResult {
-    pub result: Vec<Peripheral>,
+    pub(crate) scanned_devices: Vec<BluetoothDevice>,
 }
 
 impl ScanResult {
-    pub async fn get_by_name(&self, name: &str) -> Option<Peripheral> {
-        for device in self.iter() {
-            let props = device.properties().await.unwrap().unwrap();
-            if props.local_name == Some(name.to_string()) {
-                return Some(device.clone());
+    pub async fn search_by_name(&self, name: String) -> Option<BluetoothDevice> {
+        for device in self.scanned_devices.iter() {
+            if let Some(local_name) = &device.local_name {
+                if local_name == &name {
+                    return Some(device.clone());
+                }
             }
         }
 
         return None;
     }
 
-    pub async fn get_by_addr(&self, id: &str) -> Option<Peripheral> {
-        for device in self.iter() {
-            let props: btleplug::api::PeripheralProperties = device.properties().await.unwrap().unwrap();
-            if props.address.to_string().to_lowercase() == id.to_lowercase() {
+    pub async fn search_by_addr(&self, id: String) -> Option<BluetoothDevice> {
+        for device in self.scanned_devices.iter() {
+            if device.addr.to_lowercase() == id.to_lowercase() {
                 return Some(device.clone());
             }
         }
@@ -33,30 +46,53 @@ impl ScanResult {
     }
 }
 
-impl Deref for ScanResult {
-    type Target = Vec<Peripheral>;
-    fn deref(&self) -> &Vec<Peripheral> { &self.result }
+pub async fn scan_bluetooth(duration: Duration) -> ScanResult {
+    let adapter = CENTRAL.get().await;
+    
+    adapter.start_scan(ScanFilter::default()).await.expect("Couldn't scan for BLE devices...");
+
+    tokio::time::sleep(duration).await; // Wait until the scan is done
+
+    let scanned_peripherals = load_peripherals(adapter).await;
+
+    let mut scanned_devices = vec![];
+
+    for peripheral in scanned_peripherals.iter() {
+        scanned_devices.push(peripheral_to_bluetooth_device(peripheral).await);
+    }
+
+    return ScanResult {
+        scanned_devices
+    }
 }
 
-impl DerefMut for ScanResult {
-    fn deref_mut(&mut self) -> &mut Vec<Peripheral> { &mut self.result }
-}
-
-/// Scan for BLE devices
-pub async fn scan_bluetooth(time: u8) -> ScanResult {
-    CENTRAL.get().await
-        .start_scan(ScanFilter::default())
-        .await
-        .expect("Couldn't scan for BLE devices...");
-
-    thread::sleep(Duration::from_secs(time as u64)); // Wait until the scan is done
-
-    let result = CENTRAL.get().await
+pub(crate) async fn load_peripherals(adapter: &Adapter) -> Vec<Peripheral> {
+    let peripherals = adapter
         .peripherals()
         .await
         .expect("Couldn't retrieve peripherals from BLE adapter...");
 
-    ScanResult {
-        result
+    return peripherals
+}
+
+pub(crate) async fn peripheral_to_bluetooth_device(peripheral: &Peripheral) -> BluetoothDevice {
+    let props = peripheral.properties().await.unwrap().unwrap();
+    let local_name = props.local_name;
+    let addr = props.address.to_string();
+
+    return BluetoothDevice { 
+        addr, 
+        local_name
     }
+}
+
+pub(crate) async fn bluetooth_device_to_peripheral(device: BluetoothDevice, peripherals: Vec<Peripheral>) -> Option<Peripheral> {
+    for peripheral in peripherals.iter() {
+        let props = peripheral.properties().await.unwrap().unwrap();
+        if device.addr == props.address.to_string() {
+            return Some(peripheral.clone())
+        }
+    }
+
+    return None
 }
