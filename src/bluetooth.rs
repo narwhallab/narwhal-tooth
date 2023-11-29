@@ -25,7 +25,7 @@ impl BluetoothConnection {
     }
 
     pub async fn check_alive(&self) -> bool {
-        if let Ok(data) = self.send("NT_CheckAlive".as_bytes()).await {
+        return if let Ok(data) = self.send("NT_CheckAlive".as_bytes()).await {
             data == "Ok"
         } else {
             false
@@ -33,7 +33,7 @@ impl BluetoothConnection {
     }
 
     pub async fn send(&self, payload: &[u8]) -> Result<String, Box<dyn Error>> {
-        self.send_with_timeout(payload, Duration::from_secs(5)).await
+        return self.send_with_timeout(payload, Duration::from_secs(5)).await
     }
 
     pub async fn send_with_timeout(&self, payload: &[u8], duration_timeout: Duration) -> Result<String, Box<dyn Error>> {
@@ -101,7 +101,7 @@ impl BluetoothConnection {
         return Ok(())
     }
 
-    pub async fn get_props(&self) -> PeripheralProperties {
+    async fn get_props(&self) -> PeripheralProperties {
         return self.peripheral.properties().await.unwrap().unwrap()
     }
 
