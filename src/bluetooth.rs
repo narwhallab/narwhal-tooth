@@ -3,6 +3,7 @@ use btleplug::{platform::Peripheral, api::{Peripheral as _, Characteristic, Writ
 use futures::StreamExt;
 use log::info;
 use tokio::{task::JoinHandle, sync::mpsc::channel, time::timeout};
+use uuid::Uuid;
 use crate::{EVENT_HANDLER, scan::BluetoothDevice};
 
 #[derive(Clone)]
@@ -42,7 +43,7 @@ impl BluetoothConnection {
             return Err("Peripheral not connected".into())
         }
 
-        let uuid = String::from("1023"); // todo: random uuid
+        let uuid = String::from(&Uuid::new_v4().to_string()[..8]);
 
         let (tx, mut rx) = channel::<String>(1024);
 
