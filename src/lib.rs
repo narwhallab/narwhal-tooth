@@ -31,5 +31,6 @@ mod test {
         let connection = connect_device(hmsoft).await.unwrap();
 
         println!("{}", connection.check_alive().await);
+        connection.disconnect().await.unwrap();
     }
 }
