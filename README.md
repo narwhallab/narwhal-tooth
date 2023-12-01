@@ -12,7 +12,7 @@ println!("{}", connection.check_alive().await); // sends 'NT_CheckAlive' to Ardu
 connection.disconnect().await.unwrap(); // disconnect
 ```
 
-### protocol
+### Protocol
 Ping Pong with a simple packet. All packets should be in the following format. ***First 8 letters of a random UUID*** goes in the `<uuid>` and ***the data you want to send*** goes in the `<payload>`
 ```
 <uuid>:<payload>
