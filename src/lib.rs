@@ -25,9 +25,19 @@ mod test {
     use crate::{util::connect_device, scan::scan_bluetooth};
 
     #[tokio::test]
-    async fn test_ble() {
+    async fn test_connection_by_name() {
         let result = scan_bluetooth(Duration::from_secs(3)).await;
         let hmsoft = result.search_by_name("HMSoft".to_string()).await.expect("Could not find device");
+        let connection = connect_device(hmsoft).await.unwrap();
+
+        println!("{}", connection.check_alive().await);
+        connection.disconnect().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_connection_by_id() {
+        let result = scan_bluetooth(Duration::from_secs(3)).await;
+        let hmsoft = result.search_by_addr("50:33:8B:2A:8D:3C".to_string()).await.expect("Could not find device");
         let connection = connect_device(hmsoft).await.unwrap();
 
         println!("{}", connection.check_alive().await);
