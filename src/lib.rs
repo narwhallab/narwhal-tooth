@@ -3,12 +3,11 @@ pub mod scan;
 pub mod util;
 
 use std::collections::HashMap;
-use std::sync::Mutex;
 use async_once::AsyncOnce;
 use btleplug::platform::Adapter;
 use lazy_static::lazy_static;
 use util::fetch_adapter;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{mpsc::Sender, Mutex};
 
 lazy_static! {
     pub static ref CENTRAL: AsyncOnce<Adapter> = AsyncOnce::new(async {

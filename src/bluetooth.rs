@@ -19,11 +19,16 @@ impl BluetoothConnection {
     }
 
     pub(crate) async fn initialize(&self) {
-        self.subscribe(|(uuid, data)| {
+        let _ = self.subscribe(|(uuid, data)| {
             futures::executor::block_on(async move {
-                EVENT_HANDLER.lock().unwrap().get(&uuid).unwrap().send(data).await.unwrap();
+                let mut lock = EVENT_HANDLER.lock().await;
+                if !lock.contains_key(&uuid) {
+                    return;
+                }
+                let tx = lock.remove(&uuid).unwrap();
+                let _res = tx.send(data).await; // todo: maybe this might be useful?
             });
-        }).await.unwrap();
+        }).await;
     }
 
     pub async fn check_alive(&self) -> bool {
@@ -47,7 +52,7 @@ impl BluetoothConnection {
 
         let (tx, mut rx) = channel::<String>(1024);
 
-        EVENT_HANDLER.lock().unwrap().insert(uuid.clone(), tx);
+        EVENT_HANDLER.lock().await.insert(uuid.clone(), tx);
 
         let mut packet = uuid.as_bytes().to_vec();
         packet.extend_from_slice(&[58]);    // ':'
