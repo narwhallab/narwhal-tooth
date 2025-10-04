@@ -1,45 +1,70 @@
-pub mod bluetooth;
-pub mod scan;
-pub mod util;
-
-use std::collections::HashMap;
 use async_once::AsyncOnce;
 use btleplug::platform::Adapter;
 use lazy_static::lazy_static;
-use util::fetch_adapter;
-use tokio::sync::{mpsc::Sender, Mutex};
+
+use crate::device::get_central;
+
+pub mod connection;
+pub mod device;
 
 lazy_static! {
     pub static ref CENTRAL: AsyncOnce<Adapter> = AsyncOnce::new(async {
-        fetch_adapter().await
+        get_central().await.unwrap()
     });
-
-    pub static ref EVENT_HANDLER: Mutex<HashMap<String, Sender<String>>> = Mutex::new(HashMap::new());
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::time::Duration;
 
-    use crate::{util::connect_device, scan::scan_bluetooth};
+    use tokio::{sync::mpsc::channel, time::Instant};
+
+    use crate::{connection::connect_device, device::attempt_connection_by_name};
 
     #[tokio::test]
-    async fn test_connection_by_name() {
-        let result = scan_bluetooth(Duration::from_secs(3)).await;
-        let hmsoft = result.search_by_name("HMSoft".to_string()).await.expect("Could not find device");
-        let connection = connect_device(hmsoft).await.unwrap();
+    async fn test_communication() {
+        let (tx, mut rx) = channel(1);
 
-        println!("{}", connection.check_alive().await);
-        connection.disconnect().await.unwrap();
-    }
+        tokio::spawn(async move {
+            attempt_connection_by_name("HMSoft", tx).await
+        });
 
-    #[tokio::test]
-    async fn test_connection_by_id() {
-        let result = scan_bluetooth(Duration::from_secs(3)).await;
-        let hmsoft = result.search_by_addr("50:33:8B:2A:8D:3C".to_string()).await.expect("Could not find device");
-        let connection = connect_device(hmsoft).await.unwrap();
+        if let Ok(Some(device)) = tokio::time::timeout(Duration::from_millis(10000), rx.recv()).await {
+            let (connection, handle) = connect_device(device).await.unwrap();
+            
+            for i in 0..5 {
+                let mut data = vec![];
+                for j in 0..15 {
+                    let start = Instant::now();
+                    let res = connection.send(b"Hello How are you?").await.unwrap();
+                    let a1 = start.elapsed().as_micros() as i128;
+                    let b1 = &res[res.len()-9..].parse::<i128>().unwrap();
 
-        println!("{}", connection.check_alive().await);
-        connection.disconnect().await.unwrap();
+                    let res = connection.send(b"Hello How are you?").await.unwrap();
+                    let a2 = start.elapsed().as_micros() as i128;
+                    let b2 = &res[res.len()-9..].parse::<i128>().unwrap();
+
+
+                    println!("BT: {}", b2 - b1);
+                    println!("RST: {}", a2 - a1);
+                    println!("DIFF: {}", b2 - b1 - a2 + a1);
+
+                    data.push((b2 - b1 - a2 + a1) as f64);
+                }
+                let sum: f64 = data.iter().sum();
+                let mean = sum / data.len() as f64;
+
+                // compute variance
+                let variance = data.iter()
+                    .map(|value| {
+                        let diff = mean - *value;
+                        diff * diff
+                    })
+                    .sum::<f64>() / data.len() as f64;
+                println!("[{}] Mean: {} / Variance: {}", i, mean, variance);
+            }
+
+            connection.terminate(handle).await.unwrap();
+        }
     }
 }
