@@ -69,31 +69,23 @@ impl BluetoothConnection {
             let event_handlers = event_handlers.clone();
 
             loop {
-                let mut packet_counter = 0;
-                let mut uuid = String::new();
-                let mut payload = String::new();
+                let mut stringified_data = String::new();
 
                 while let Some(notification) = notifications_stream.next().await {
                     let raw_data = notification.value;
 
-                    let stringified_data = String::from_utf8(raw_data).unwrap_or("<Parse Error>".to_string());
+                    stringified_data += &String::from_utf8(raw_data).unwrap_or("<Parse Error>".to_string());
                     
-                    if packet_counter == 0 {
-                        let split_data: Vec<String> = stringified_data.split(":").map(|x| x.to_string()).collect();
-                    
-                        uuid = split_data[0].clone();
-                        payload = split_data[1].clone();
-                    } else {
-                        payload += &stringified_data;
-                    }
-
-                    if payload.ends_with("#;EOF;#") {
-                        payload = payload[..payload.len()-7].to_string();
+                    if stringified_data.ends_with("#;EOF;#") {
+                        stringified_data = stringified_data[..stringified_data.len()-7].to_string();
                         break
                     }
-
-                    packet_counter += 1;
                 }
+
+                let split_data: Vec<String> = stringified_data.split(":").map(|x| x.to_string()).collect();
+                    
+                let uuid = split_data[0].clone();
+                let payload = split_data[1].clone();
 
                 futures::executor::block_on(async {
                     let mut lock = event_handlers.lock().await;
@@ -132,7 +124,7 @@ impl BluetoothConnection {
 pub(crate) async fn bluetooth_device_to_peripheral(device: BluetoothDevice, peripherals: Vec<Peripheral>) -> anyhow::Result<Peripheral> {
     for peripheral in peripherals.iter() {
         let _local_name = peripheral.properties().await?.and_then(|p| p.local_name);
-        if device.local_name == _local_name {
+        if Some(device.local_name.clone()) == _local_name {
             return Ok(peripheral.clone())
         }
     }

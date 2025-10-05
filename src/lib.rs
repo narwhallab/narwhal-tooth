@@ -1,8 +1,6 @@
 use async_once::AsyncOnce;
-use btleplug::platform::Adapter;
+use btleplug::{api::Manager as _, platform::{Adapter, Manager}};
 use lazy_static::lazy_static;
-
-use crate::device::get_central;
 
 pub mod connection;
 pub mod device;
@@ -13,20 +11,26 @@ lazy_static! {
     });
 }
 
+pub async fn get_central() -> anyhow::Result<Adapter> {
+    let manager = Manager::new().await?;
+    let adapters = manager.adapters().await?;
+    adapters.into_iter().nth(0).ok_or(anyhow::anyhow!("No bluetooth adapter was found"))
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use tokio::{sync::mpsc::channel, time::Instant};
 
-    use crate::{connection::connect_device, device::attempt_connection_by_name};
+    use crate::{connection::connect_device, device::scan_device_by_name};
 
     #[tokio::test]
     async fn test_communication() {
         let (tx, mut rx) = channel(1);
 
         tokio::spawn(async move {
-            attempt_connection_by_name("HMSoft", tx).await
+            scan_device_by_name("HMSoft", tx).await
         });
 
         if let Ok(Some(device)) = tokio::time::timeout(Duration::from_millis(10000), rx.recv()).await {
@@ -34,20 +38,20 @@ mod tests {
             
             for i in 0..5 {
                 let mut data = vec![];
-                for j in 0..15 {
+                for _ in 0..15 {
                     let start = Instant::now();
-                    let res = connection.send(b"Hello How are you?").await.unwrap();
                     let a1 = start.elapsed().as_micros() as i128;
-                    let b1 = &res[res.len()-9..].parse::<i128>().unwrap();
+                    let res = connection.send(b"Hello How are you?").await.unwrap();
+                    let b1 = &res[res.len()-8..].parse::<i128>().unwrap();
 
                     let res = connection.send(b"Hello How are you?").await.unwrap();
                     let a2 = start.elapsed().as_micros() as i128;
-                    let b2 = &res[res.len()-9..].parse::<i128>().unwrap();
+                    let b2 = &res[res.len()-8..].parse::<i128>().unwrap();
 
 
-                    println!("BT: {}", b2 - b1);
-                    println!("RST: {}", a2 - a1);
-                    println!("DIFF: {}", b2 - b1 - a2 + a1);
+                    // println!("BT: {}", b2 - b1);
+                    // println!("RST: {}", a2 - a1);
+                    // println!("DIFF: {}", b2 - b1 - a2 + a1);
 
                     data.push((b2 - b1 - a2 + a1) as f64);
                 }

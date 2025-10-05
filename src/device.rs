@@ -1,5 +1,6 @@
-use btleplug::{api::{Central, CentralEvent, Manager as _, Peripheral as _, ScanFilter}, platform::{Adapter, Manager}};
+use btleplug::{api::{Central, CentralEvent, Peripheral as _, ScanFilter}};
 use futures::StreamExt;
+use log::info;
 use tokio::sync::mpsc;
 
 use crate::CENTRAL;
@@ -7,11 +8,11 @@ use crate::CENTRAL;
 #[derive(Clone)]
 pub struct BluetoothDevice {
     pub addr: String,
-    pub local_name: Option<String>
+    pub local_name: String
 }
 
 impl BluetoothDevice {
-    pub fn get_local_name(&self) -> Option<String> {
+    pub fn get_local_name(&self) -> String {
         self.local_name.clone()
     }
 
@@ -20,17 +21,11 @@ impl BluetoothDevice {
     }
 }
 
-pub async fn get_central() -> anyhow::Result<Adapter> {
-    let manager = Manager::new().await?;
-    let adapters = manager.adapters().await?;
-    adapters.into_iter().nth(0).ok_or(anyhow::anyhow!("No bluetooth adapter was found"))
-}
-
-pub async fn attempt_connection_by_name(peripheral_name: &str, tx: mpsc::Sender<BluetoothDevice>) -> anyhow::Result<()> {
+pub async fn scan_device_by_name(peripheral_name: &str, tx: mpsc::Sender<BluetoothDevice>) -> anyhow::Result<()> {
     let central = CENTRAL.get().await;
 
     let adapter_state = central.adapter_state().await?;
-    println!("Adapter State: {:?}", adapter_state);
+    info!("Adapter State: {:?}", adapter_state);
 
     let mut events = central.events().await?;
 
@@ -44,10 +39,10 @@ pub async fn attempt_connection_by_name(peripheral_name: &str, tx: mpsc::Sender<
                     let _peripheral_address = properties.address.to_string();
 
                     if let Some(_peripheral_name) = properties.local_name {
-                        println!("Discovered: {}", &_peripheral_name);
+                        info!("Discovered: {}", &_peripheral_name);
                         if &_peripheral_name == peripheral_name {
                             let bluetooth_device = BluetoothDevice {
-                                local_name: Some(_peripheral_name),
+                                local_name: _peripheral_name,
                                 addr: peripheral_name.to_string()
                             };
 
@@ -73,14 +68,14 @@ mod tests {
 
     use tokio::sync::mpsc::channel;
 
-    use crate::device::attempt_connection_by_name;
+    use crate::device::scan_device_by_name;
 
     #[tokio::test]
     async fn test_ble_connection() {
         let (tx, mut rx) = channel(1);
 
         tokio::spawn(async move {
-            attempt_connection_by_name("HMSoft", tx).await
+            scan_device_by_name("HMSoft", tx).await
         });
 
         match tokio::time::timeout(Duration::from_millis(10000), rx.recv()).await {
