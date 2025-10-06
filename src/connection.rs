@@ -6,6 +6,7 @@ use tokio::{sync::{mpsc::{channel, Sender}, Mutex}, task::JoinHandle, time::time
 use uuid::Uuid;
 use crate::{device::BluetoothDevice, CENTRAL};
 
+#[derive(Clone)]
 pub struct BluetoothConnection {
     pub(crate) peripheral: Peripheral,
     pub(crate) target_characteristic: Characteristic,
