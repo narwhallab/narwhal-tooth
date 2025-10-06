@@ -1,6 +1,10 @@
+use std::collections::HashMap;
+
 use async_once::AsyncOnce;
 use btleplug::{api::Manager as _, platform::{Adapter, Manager}};
 use lazy_static::lazy_static;
+use tokio::{sync::Mutex, task::JoinHandle};
+use uuid::Uuid;
 
 pub mod connection;
 pub mod device;
@@ -9,6 +13,8 @@ lazy_static! {
     pub static ref CENTRAL: AsyncOnce<Adapter> = AsyncOnce::new(async {
         get_central().await.unwrap()
     });
+
+    pub static ref GLOBAL_CONNECTION_MANAGER: Mutex<HashMap<Uuid, JoinHandle<()>>> = Mutex::new(HashMap::new());
 }
 
 pub async fn get_central() -> anyhow::Result<Adapter> {
@@ -34,7 +40,7 @@ mod tests {
         });
 
         if let Ok(Some(device)) = tokio::time::timeout(Duration::from_millis(10000), rx.recv()).await {
-            let (connection, handle) = connect_device(device).await.unwrap();
+            let connection = connect_device(device).await.unwrap();
             
             for i in 0..5 {
                 let mut data = vec![];
@@ -68,7 +74,7 @@ mod tests {
                 println!("[{}] Mean: {} / Variance: {}", i, mean, variance);
             }
 
-            connection.terminate(handle).await.unwrap();
+            connection.terminate().await.unwrap();
         }
     }
 }

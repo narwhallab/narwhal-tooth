@@ -2,16 +2,17 @@ use std::{collections::HashMap, error::Error, sync::Arc, time::Duration};
 use btleplug::{api::{Central as _, CharPropFlags, Characteristic, Peripheral as _, WriteType}, platform::Peripheral};
 use futures::StreamExt;
 use log::info;
-use tokio::{sync::{mpsc::{channel, Sender}, Mutex}, task::JoinHandle, time::timeout};
+use tokio::{sync::{mpsc::{channel, Sender}, Mutex}, time::timeout};
 use uuid::Uuid;
-use crate::{device::BluetoothDevice, CENTRAL};
+use crate::{device::BluetoothDevice, CENTRAL, GLOBAL_CONNECTION_MANAGER};
 
 #[derive(Clone)]
 pub struct BluetoothConnection {
     pub(crate) peripheral: Peripheral,
     pub(crate) target_characteristic: Characteristic,
     pub(crate) device: BluetoothDevice,
-    pub(crate) event_handlers: Arc<Mutex<HashMap<String, Sender<String>>>>
+    pub(crate) event_handlers: Arc<Mutex<HashMap<String, Sender<String>>>>,
+    pub(crate) connection_uuid: Uuid
 }
 
 impl BluetoothConnection {
@@ -55,7 +56,7 @@ impl BluetoothConnection {
         return response_result
     }
 
-    pub async fn initialize(&self) -> anyhow::Result<JoinHandle<()>> {
+    pub async fn initialize(&self) -> anyhow::Result<()> {
         if !self.is_connected().await {
             return Err(anyhow::anyhow!("Peripheral not connected"))
         }
@@ -101,17 +102,23 @@ impl BluetoothConnection {
 
         info!("Subscribed to peripheral {:?}", self.device.get_local_name());
 
-        return Ok(task)
+        let mut global_connection_manager_ref = GLOBAL_CONNECTION_MANAGER.lock().await;
+        global_connection_manager_ref.insert(self.connection_uuid, task);
+
+        return Ok(())
     }
 
-    pub async fn terminate(&self, join_handle: JoinHandle<()>) -> Result<(), Box<dyn Error>> {
+    pub async fn terminate(&self) -> Result<(), Box<dyn Error>> {
         if !self.is_connected().await {
             return Err("Peripheral not connected".into())
         }
         
         // unsubscribe characteristic and terminate handler
         self.peripheral.unsubscribe(&self.target_characteristic).await?;
-        join_handle.abort();
+        if let Some(handle) = GLOBAL_CONNECTION_MANAGER.lock().await.get(&self.connection_uuid) {
+            handle.abort();
+        }
+
         info!("Unsubscribed to peripheral {:?}", self.device.get_local_name());
 
         // disconnect from the peripheral
@@ -133,7 +140,7 @@ pub(crate) async fn bluetooth_device_to_peripheral(device: BluetoothDevice, peri
     return Err(anyhow::anyhow!("Given peripheral wasn't found"));
 }
 
-pub async fn connect_device(device: BluetoothDevice) -> anyhow::Result<(BluetoothConnection, JoinHandle<()>)>  {
+pub async fn connect_device(device: BluetoothDevice) -> anyhow::Result<BluetoothConnection>  {
     let central = CENTRAL.get().await;
 
     let peripherals = central
@@ -166,12 +173,13 @@ pub async fn connect_device(device: BluetoothDevice) -> anyhow::Result<(Bluetoot
                     peripheral: peripheral.clone(), 
                     target_characteristic: characteristic,
                     device: device.clone(),
-                    event_handlers: Arc::new(Mutex::new(HashMap::new()))
+                    event_handlers: Arc::new(Mutex::new(HashMap::new())),
+                    connection_uuid: Uuid::new_v4()
                 };
 
-                let handler = connection.initialize().await?;
+                connection.initialize().await?;
 
-                return Ok((connection, handler));
+                return Ok(connection);
             }
         }
     }
