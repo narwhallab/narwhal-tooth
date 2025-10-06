@@ -1,10 +1,11 @@
-use std::{collections::HashMap, error::Error, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use btleplug::{api::{Central as _, CharPropFlags, Characteristic, Peripheral as _, WriteType}, platform::Peripheral};
 use futures::StreamExt;
 use log::info;
 use tokio::{sync::{mpsc::{channel, Sender}, Mutex}, time::timeout};
 use uuid::Uuid;
 use crate::{device::BluetoothDevice, CENTRAL, GLOBAL_CONNECTION_MANAGER};
+use anyhow::{anyhow, Result};
 
 #[derive(Clone)]
 pub struct BluetoothConnection {
@@ -28,13 +29,13 @@ impl BluetoothConnection {
         }
     }
 
-    pub async fn send(&self, payload: &[u8]) -> Result<String, Box<dyn Error>> {
+    pub async fn send(&self, payload: &[u8]) -> Result<String> {
         return self.send_with_timeout(payload, Duration::from_secs(60)).await
     }
 
-    pub async fn send_with_timeout(&self, payload: &[u8], duration_timeout: Duration) -> Result<String, Box<dyn Error>> {
+    pub async fn send_with_timeout(&self, payload: &[u8], duration_timeout: Duration) -> Result<String> {
         if !self.is_connected().await {
-            return Err("Peripheral not connected".into())
+            return Err(anyhow!("Peripheral not connected"))
         }
 
         let uuid = String::from(&Uuid::new_v4().to_string()[..8]);
@@ -51,14 +52,14 @@ impl BluetoothConnection {
 
         info!("Sent to peripheral {:?}", self.device.get_local_name());
 
-        let response_result = timeout(duration_timeout, rx.recv()).await?.ok_or("Timed Out".into());
+        let response_result = timeout(duration_timeout, rx.recv()).await?.ok_or(anyhow!("Timed Out"));
 
         return response_result
     }
 
-    pub async fn initialize(&self) -> anyhow::Result<()> {
+    pub async fn initialize(&self) -> Result<()> {
         if !self.is_connected().await {
-            return Err(anyhow::anyhow!("Peripheral not connected"))
+            return Err(anyhow!("Peripheral not connected"))
         }
 
         // Subscribe to the characteristic
@@ -108,9 +109,9 @@ impl BluetoothConnection {
         return Ok(())
     }
 
-    pub async fn terminate(&self) -> Result<(), Box<dyn Error>> {
+    pub async fn terminate(&self) -> Result<()> {
         if !self.is_connected().await {
-            return Err("Peripheral not connected".into())
+            return Err(anyhow!("Peripheral not connected"))
         }
         
         // unsubscribe characteristic and terminate handler
@@ -129,7 +130,7 @@ impl BluetoothConnection {
     }
 }
 
-pub(crate) async fn bluetooth_device_to_peripheral(device: BluetoothDevice, peripherals: Vec<Peripheral>) -> anyhow::Result<Peripheral> {
+pub(crate) async fn bluetooth_device_to_peripheral(device: BluetoothDevice, peripherals: Vec<Peripheral>) -> Result<Peripheral> {
     for peripheral in peripherals.iter() {
         let _local_name = peripheral.properties().await?.and_then(|p| p.local_name);
         if Some(device.local_name.clone()) == _local_name {
@@ -137,10 +138,10 @@ pub(crate) async fn bluetooth_device_to_peripheral(device: BluetoothDevice, peri
         }
     }
 
-    return Err(anyhow::anyhow!("Given peripheral wasn't found"));
+    return Err(anyhow!("Given peripheral wasn't found"));
 }
 
-pub async fn connect_device(device: BluetoothDevice) -> anyhow::Result<BluetoothConnection>  {
+pub async fn connect_device(device: BluetoothDevice) -> Result<BluetoothConnection>  {
     let central = CENTRAL.get().await;
 
     let peripherals = central
@@ -160,7 +161,7 @@ pub async fn connect_device(device: BluetoothDevice) -> anyhow::Result<Bluetooth
 
     // failed to connect
     if !peripheral.is_connected().await? {
-        return Err(anyhow::anyhow!("Could not connect to peripheral"));
+        return Err(anyhow!("Could not connect to peripheral"));
     }
 
     peripheral.discover_services().await?;
@@ -184,5 +185,5 @@ pub async fn connect_device(device: BluetoothDevice) -> anyhow::Result<Bluetooth
         }
     }
 
-    return Err(anyhow::anyhow!("Could not find a valid characteristic for read/write"))
+    return Err(anyhow!("Could not find a valid characteristic for read/write"))
 }
